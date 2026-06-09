@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace LowEcommerce\Services;
+namespace LowEcommerce\Service;
 
 final class ProductService
 {

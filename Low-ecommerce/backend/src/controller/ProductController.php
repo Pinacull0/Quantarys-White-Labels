@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LowEcommerce\Controller;
 
-use LowEcommerce\Services\ProductService;
+use LowEcommerce\Service\ProductService;
 use LowEcommerce\Utils\Sanitization;
 
 final class ProductController

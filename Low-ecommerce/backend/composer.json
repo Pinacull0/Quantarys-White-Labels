@@ -4,15 +4,7 @@
   "type": "project",
   "autoload": {
     "psr-4": {
-      "LowEcommerce\\": [
-        "src/",
-        "config/",
-        "controller/",
-        "middleware/",
-        "routes/",
-        "services/",
-        "utils/"
-      ]
+      "LowEcommerce\\": "src/"
     }
   },
   "require": {

@@ -52,15 +52,15 @@ Low-ecommerce/
       middlewares/
       utils/
   backend/
-    config/
-    utils/
-      Sanitization.php
-    middleware/
-    controller/
-    services/
-    routes/
-    public/
+    index.php
     src/
+      config/
+      controller/
+      service/
+      routes/
+      middleware/
+      utils/
+        Sanitization.php
   db/
     schema.sql
     seed.sql
@@ -607,10 +607,12 @@ O frontend do `Low-ecommerce` deve continuar simples, sem build obrigatorio, mas
 - Cada pagina deve ter, no minimo, `index.html`, `style.css` e `script.js`.
 - O `index.html` define estrutura semantica, containers e pontos de montagem.
 - O `style.css` define somente estilos daquela pagina, exceto quando existir um arquivo global.
-- O `script.js` deve ser fino: importa controllers/services e inicializa a pagina.
+- O `script.js` da pagina controla DOM, eventos, criacao de componentes e renderizacao.
 - Paginas nao devem conter regra de negocio complexa.
 - Paginas nao devem repetir logica que ja existe em controller, service ou utils.
 - Paginas devem ter estados de carregamento, erro e vazio quando consumirem dados dinamicos.
+- Paginas e controllers nao devem usar `innerHTML`, `outerHTML` ou `insertAdjacentHTML` para renderizar dados.
+- Renderizacao deve usar `createElement`, `textContent`, `setAttribute`, `dataset`, `append` e `replaceChildren`.
 
 Exemplo correto:
 
@@ -628,29 +630,35 @@ Exemplo proibido:
 ```js
 const response = await fetch('http://localhost:8080/products');
 const products = await response.json();
-document.querySelector('#product-list').innerHTML = products.map(...).join('');
+console.log(products);
 ```
 
 ### Controllers
 
 - Controllers ficam em `frontend/src/controller`.
-- Controllers coordenam pagina, service, utils e DOM.
-- Controllers podem ler parametros da URL.
-- Controllers podem montar estados de tela.
+- Controllers devem ter nome da funcionalidade que executam, como `loginController.js` ou `products/allProductsController.js`.
+- Controllers nao manipulam DOM.
+- Controllers nao criam componentes.
+- Controllers nao usam `document.querySelector`, `createElement`, `append`, `replaceChildren` ou eventos de tela.
+- Controllers recebem valores enviados pelo `script.js` da pagina.
 - Controllers podem chamar services.
-- Controllers podem chamar formatadores e validadores em `utils`.
+- Controllers podem chamar sanitizadores e validadores especificos em `utils`.
 - Controllers nao devem montar URLs de API manualmente.
 - Controllers nao devem repetir chamadas HTTP ja existentes em services.
 - Controllers nao devem conter regra de negocio pesada.
 - Controllers nao devem conter formatacao monetaria, validacao complexa ou manipulacao de storage inline.
-- Controllers devem receber seletores ou elementos da pagina para facilitar reuso.
+- Controllers devem chamar funcoes de sanitizacao em `frontend/src/utils/sanitizations.js`.
+- Controllers nao devem declarar funcoes de sanitizacao inline.
+- Controllers devem retornar para o `script.js` um objeto de sucesso ou erro.
+- Quando a funcionalidade nao precisar enviar dados ao service, o controller nao deve criar payload.
 
 Exemplo correto:
 
 ```js
-const filters = readCatalogFiltersFromUrl();
-const result = await searchProducts(filters);
-renderProducts(target, result.items);
+export async function searchProductsController(values) {
+  const filters = sanitizeSearchFilters(values);
+  return searchProductsService(filters);
+}
 ```
 
 Exemplo proibido:
@@ -662,22 +670,33 @@ const response = await fetch(`http://localhost:8080/products?brand=${brand}&cate
 ### Services
 
 - Services ficam em `frontend/src/service`.
+- Services devem ter nome da funcionalidade que executam, como `loginService.js` ou `products/allProductsService.js`.
 - Services concentram chamadas HTTP para o backend.
-- Services devem usar `apiRequest` de `frontend/src/utils/api.js`.
+- Services devem fazer o proprio `fetch` dentro do arquivo da funcionalidade.
+- Services nao devem depender de helper generico de request nesta fase.
 - Services devem receber parametros simples e retornar dados para controllers.
 - Services nao manipulam DOM.
 - Services nao leem elementos HTML.
 - Services nao exibem alertas.
 - Services nao formatam valores para exibicao.
+- Services de uma funcionalidade nao devem ser renomeados de forma generica, como `product-service.js`.
 
 Exemplo correto:
 
 ```js
 export async function searchProducts(filters = {}) {
-  return apiRequest('/api/v1/storefront/search', {
+  const response = await fetch('http://localhost:8080/api/v1/storefront/search', {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include',
     body: JSON.stringify(filters)
   });
+
+  const payload = await response.json();
+
+  return payload.data ?? [];
 }
 ```
 
@@ -686,6 +705,12 @@ export async function searchProducts(filters = {}) {
 - Utils ficam em `frontend/src/utils`.
 - Utils devem ser funcoes puras ou quase puras.
 - Utils podem formatar moeda, datas, slugs, mensagens e validacoes simples.
+- Sanitizacoes do frontend ficam em `frontend/src/utils/sanitizations.js`.
+- Sanitizacoes nao devem ser genericas quando o campo tiver regra propria.
+- Email deve validar formato de email, tamanho maximo e caracteres perigosos.
+- Senha deve validar tamanho maximo e caracteres perigosos.
+- Checkbox deve aceitar apenas valores booleanos ou equivalentes controlados.
+- Sanitizacoes devem reduzir riscos de XSS, SQL injection, caracteres de controle e payloads excessivos.
 - Utils nao devem depender de uma pagina especifica.
 - Utils nao devem manipular DOM, exceto quando forem explicitamente helpers de DOM.
 - Utils nao devem chamar API diretamente, exceto `api.js`.
@@ -693,6 +718,8 @@ export async function searchProducts(filters = {}) {
 ### Middlewares
 
 - Middlewares ficam em `frontend/src/middlewares`.
+- Verificacao de sessao deve se chamar `sessionVerify.js`.
+- Login nao deve ficar em middleware; login deve usar `loginController.js` e `loginService.js`.
 - Middlewares protegem paginas sensiveis.
 - Middlewares validam contexto de sessao, autenticacao, permissao e perfil.
 - Middlewares nao renderizam pagina completa.
@@ -882,7 +909,7 @@ Objetivo:
 
 Fluxo:
 
-- O frontend chama services usando `apiRequest`.
+- O frontend chama services especificos da funcionalidade.
 - O service sempre envia body quando houver qualquer dado.
 - A API PHP recebe a requisicao no router.
 - O router le o body uma unica vez.
@@ -899,7 +926,7 @@ Entregas:
 - Erro padrao para rota inexistente.
 - Erro padrao para payload invalido.
 - CORS configurado.
-- `apiRequest` preparado para `GET`, `POST` e `PATCH`.
+- Services frontend preparados com `fetch` proprio para `GET`, `POST` e `PATCH`.
 
 ### Etapa 2: Banco de Dados, Config e Seeds
 
@@ -910,7 +937,7 @@ Objetivo:
 
 Fluxo:
 
-- O backend carrega configuracao em `backend/config`.
+- O backend carrega configuracao em `backend/src/config`.
 - O service solicita dados para repository ou camada equivalente.
 - O repository acessa o banco.
 - O banco retorna registros para o service.
@@ -924,7 +951,7 @@ Entregas:
 - Tabelas de `products`, `product_images`, `product_variants`, `inventory`.
 - Tabelas de `carts`, `cart_items`, `coupons`, `orders`, `order_items`, `payments`.
 - Seeds de admin, categorias, marcas, colecoes e produtos.
-- Conexao de banco em `backend/config`.
+- Conexao de banco em `backend/src/config`.
 
 ### Etapa 3: Segurança Base, Sanitização e Middlewares
 
@@ -946,7 +973,7 @@ Fluxo:
 
 Entregas:
 
-- `backend/utils/Sanitization.php` com sanitizadores por payload.
+- `backend/src/utils/Sanitization.php` com sanitizadores por payload.
 - Middleware de rate-limit.
 - Middleware de sessao de cliente.
 - Middleware de sessao admin.
@@ -975,8 +1002,9 @@ Campos:
 Fluxo:
 
 - Ao clicar em `Enviar`, o `script.js` chama o controller de login admin.
-- O controller frontend coleta email, senha e `manter conectado`.
-- O controller frontend sanitiza os 3 valores com utils do frontend.
+- O `script.js` coleta email, senha e `manter conectado`.
+- O `script.js` envia os valores para o controller frontend.
+- O controller frontend chama os sanitizadores especificos de email, senha e checkbox em `frontend/src/utils/sanitizations.js`.
 - O controller frontend chama o service admin auth.
 - O service envia `POST /api/v1/admin/auth/login` com email, senha e `remember` no body.
 - A API passa pelo middleware de CORS.
@@ -1029,7 +1057,8 @@ Fluxo:
 - A API passa pelo middleware de sessao admin.
 - O middleware valida cookie, HMAC, expiracao e sessao no banco.
 - O controller backend retorna dados do admin.
-- O controller frontend renderiza dashboard.
+- O controller frontend devolve os dados do dashboard para o `script.js`.
+- O `script.js` renderiza dashboard.
 - Ao clicar em `Sair`, o controller chama service de logout.
 - O service envia `POST /api/v1/admin/auth/logout`.
 - O backend invalida sessao no banco.
@@ -1168,7 +1197,8 @@ Fluxo:
 - Para menus dinamicos, o service chama `GET /api/v1/storefront/menu`.
 - A API monta dados publicos no service backend.
 - O backend retorna vitrines e navegacao.
-- O controller frontend renderiza as secoes.
+- O controller frontend devolve os blocos para o `script.js`.
+- O `script.js` renderiza as secoes.
 - Erros exibem estado de falha sem quebrar a pagina.
 
 Entregas:
@@ -1209,7 +1239,8 @@ Fluxo:
 - O service backend valida filtros permitidos.
 - O service consulta banco.
 - O backend retorna produtos, filtros disponiveis e meta de paginacao.
-- O controller frontend renderiza cards, filtros, ordenacao e paginacao.
+- O controller frontend devolve produtos, filtros, ordenacao e paginacao para o `script.js`.
+- O `script.js` renderiza cards, filtros, ordenacao e paginacao.
 
 Entregas:
 
@@ -1482,16 +1513,18 @@ Entregas:
 Esta seção detalha o fluxo de construção de cada funcionalidade. O padrão deve ser sempre o mesmo:
 
 1. Usuário interage com a página.
-2. `script.js` chama o controller frontend.
-3. Controller frontend coleta e sanitiza valores.
-4. Controller frontend chama service frontend.
-5. Service frontend envia dados no body para a API PHP.
-6. API passa pelos middlewares necessários.
-7. Controller backend sanitiza novamente.
-8. Controller backend chama service backend.
-9. Service backend valida regra de negócio e acessa banco.
-10. Backend retorna JSON padronizado.
-11. Controller frontend renderiza sucesso, erro ou estado vazio.
+2. `script.js` coleta valores e controla DOM/eventos.
+3. `script.js` chama o controller frontend.
+4. Controller frontend recebe valores e chama sanitizadores de `frontend/src/utils/sanitizations.js`.
+5. Controller frontend chama service frontend.
+6. Service frontend envia dados no body para a API PHP.
+7. API passa pelos middlewares necessários.
+8. Controller backend sanitiza novamente.
+9. Controller backend chama service backend.
+10. Service backend valida regra de negócio e acessa banco.
+11. Backend retorna JSON padronizado.
+12. Controller frontend devolve sucesso ou erro para o `script.js`.
+13. `script.js` renderiza sucesso, erro ou estado vazio.
 
 ### Fluxo 1: Login Admin
 
@@ -1511,8 +1544,9 @@ Passo a passo:
 - Usuário digita email e senha.
 - Usuário marca ou não `manter conectado`.
 - Ao clicar em `Enviar`, o `script.js` chama `admin-login-controller`.
-- O controller frontend lê email, senha e checkbox.
-- O controller frontend sanitiza os 3 valores.
+- O `script.js` lê email, senha e checkbox.
+- O `script.js` envia os valores para o controller frontend.
+- O controller frontend chama os sanitizadores especificos de email, senha e checkbox em `frontend/src/utils/sanitizations.js`.
 - O controller frontend valida campos obrigatórios.
 - O controller frontend chama `admin-auth-service`.
 - O service frontend envia `POST /api/v1/admin/auth/login`.
@@ -1893,13 +1927,14 @@ Componentes:
 
 Passo a passo:
 
-- Página carrega `home-controller`.
+- Página carrega `allProductsController` quando precisar listar todos os produtos.
 - Controller chama storefront service.
 - Service chama `GET /api/v1/storefront/home`.
 - API monta dados públicos.
 - Service backend busca banners ativos, categorias, campanhas e vitrines.
 - Backend retorna blocos da home.
-- Controller frontend renderiza blocos.
+- Controller frontend devolve blocos para o `script.js`.
+- O `script.js` renderiza blocos.
 - Se algum bloco vier vazio, controller esconde ou mostra estado vazio da seção.
 
 ### Fluxo 14: Menu de Departamentos
@@ -2293,7 +2328,7 @@ Campos:
 
 Passo a passo:
 
-- Controller sanitiza email, senha e remember.
+- Controller chama os sanitizadores especificos de email, senha e remember.
 - Service envia `POST /api/v1/auth/login`.
 - API passa por rate-limit.
 - Controller backend sanitiza.
@@ -2320,7 +2355,7 @@ Campos:
 Passo a passo:
 
 - Usuário solicita recuperação.
-- Controller sanitiza email.
+- Controller chama o sanitizador especifico de email.
 - Service envia `POST /api/v1/auth/forgot-password`.
 - Backend passa por rate-limit.
 - Service cria token seguro com expiração.
@@ -2344,7 +2379,8 @@ Passo a passo:
 - Service envia `POST /api/v1/auth/me`.
 - Backend valida cookie HMAC e sessão.
 - Controller backend retorna cliente básico.
-- Controller frontend renderiza atalhos de conta.
+- Controller frontend devolve dados da conta para o `script.js`.
+- O `script.js` renderiza atalhos de conta.
 - Para atualizar perfil, controller sanitiza dados.
 - Service envia `PATCH /api/v1/account/profile/update`.
 - Backend sanitiza e valida.
@@ -2623,7 +2659,8 @@ Passo a passo:
 - Service frontend recebe resposta da API.
 - Se `response.ok` for falso, service lança erro padronizado.
 - Controller captura erro.
-- Controller renderiza mensagem amigável.
+- Controller devolve erro tratado para o `script.js`.
+- O `script.js` renderiza mensagem amigável.
 - Backend nunca retorna erro cru de banco ou stack trace.
 - Backend retorna código, mensagem e detalhes seguros.
 - Erros de validação retornam campos inválidos.
@@ -2705,19 +2742,19 @@ Stack: `PHP 8.2+`.
 - `utils`: respostas JSON, validações, sanitização, helpers de data, moeda e segurança.
 - `middleware`: autenticação, autorização, CORS, rate limit e tratamento de erros.
 - `controller`: entrada HTTP, chamada de sanitização, chamada de service e resposta.
-- `services`: regras de negócio, como catálogo, carrinho, pedido, pagamento e estoque.
+- `service`: regras de negócio, como catálogo, carrinho, pedido, pagamento e estoque.
 - `routes`: definição das rotas HTTP e ligação com controllers.
-- `public`: ponto de entrada público da aplicação PHP.
-- `src`: código PHP inicial compartilhado.
+- `index.php`: ponto de entrada do backend, centraliza bootstrap, headers, middlewares globais e registro de rotas.
+- `src`: contém todos os módulos internos do backend.
 
 ### Fluxo de desenvolvimento
 
-1. Definir a rota em `backend/routes`.
-2. Criar o controller em `backend/controller`.
-3. Sanitizar dados chamando funções/classes de `backend/utils/Sanitization.php`.
-4. Implementar regra de negócio em `backend/services`.
-5. Aplicar validações e segurança em `backend/middleware`.
-6. Ler configurações em `backend/config`.
+1. Definir a rota em `backend/src/routes`.
+2. Criar o controller em `backend/src/controller`.
+3. Sanitizar dados chamando funções/classes de `backend/src/utils/Sanitization.php`.
+4. Implementar regra de negócio em `backend/src/service`.
+5. Aplicar validações e segurança em `backend/src/middleware`.
+6. Ler configurações em `backend/src/config`.
 7. Persistir dados usando scripts e migrations em `db`.
 
 ## Regras de Arquitetura do Backend
@@ -2726,7 +2763,7 @@ Stack: `PHP 8.2+`.
 
 - Controllers devem ser finos.
 - Controllers recebem dados da rota/request.
-- Controllers chamam sanitização pronta em `backend/utils/Sanitization.php`.
+- Controllers chamam sanitização pronta em `backend/src/utils/Sanitization.php`.
 - Controllers chamam services.
 - Controllers retornam arrays/respostas para a camada HTTP.
 - Controllers não acessam banco diretamente.
@@ -2750,7 +2787,7 @@ $name = trim(strip_tags((string) $requestBody['name']));
 
 ### Sanitização
 
-- Todo código de sanitização do backend fica em `backend/utils/Sanitization.php`.
+- Todo código de sanitização do backend fica em `backend/src/utils/Sanitization.php`.
 - Sanitização remove espaços excedentes, tags indesejadas e caracteres perigosos.
 - Sanitização normaliza strings antes do service receber os dados.
 - Sanitização não decide regra de negócio.
@@ -2783,6 +2820,12 @@ $name = trim(strip_tags((string) $requestBody['name']));
 - Middlewares fazem autenticação, autorização, CORS, rate limit e tratamento de erros.
 - Middlewares não executam regra de negócio de ecommerce.
 - Middlewares não substituem services.
+
+Middlewares base:
+
+- `backend/src/middleware/rateLimiter.php`: possui apenas a função `rateLimiter($attempts, $waitSeconds)`.
+- `backend/src/middleware/bodyLimiter.php`: possui apenas a função `bodyLimiter($maxBytes)`.
+- Os middlewares devem ser registrados no `Router` em `backend/index.php`.
 
 ### Utils
 
@@ -3240,16 +3283,16 @@ Backend:
 ```bash
 cd Low-ecommerce/backend
 composer install
-php -S localhost:8080 -t public
+php -S localhost:8080 index.php
 ```
 
 ## Padrões
 
 - Frontend Low usa `HTML`, `CSS` e `JavaScript` sem dependência de build.
 - Backend usa `PHP 8.2+`.
-- Toda regra de negócio fica em `services`.
+- Toda regra de negócio fica em `backend/src/service`.
 - Controllers são finos e não sanitizam inline.
-- Sanitização fica em `backend/utils/Sanitization.php`.
+- Sanitização fica em `backend/src/utils/Sanitization.php`.
 - Utils não devem depender da camada HTTP.
 - Backend retorna JSON padronizado.
 - Banco usa valores monetários em centavos.
