@@ -1,0 +1,12 @@
+body {
+  background: #f5f7fb;
+  color: #172033;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+}
+
+.page {
+  margin: 0 auto;
+  max-width: 960px;
+  padding: 3rem 1rem;
+}

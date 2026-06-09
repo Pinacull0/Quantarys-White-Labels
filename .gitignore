@@ -1,0 +1,9 @@
+node_modules/
+vendor/
+dist/
+.output/
+.nuxt/
+.env
+.env.*
+!.env.example
+*.log

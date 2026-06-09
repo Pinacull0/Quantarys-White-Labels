@@ -1,0 +1,21 @@
+{
+  "name": "quantarys/low-ecommerce-backend",
+  "description": "Backend PHP simples para o Low Ecommerce.",
+  "type": "project",
+  "autoload": {
+    "psr-4": {
+      "LowEcommerce\\": [
+        "src/",
+        "config/",
+        "controller/",
+        "middleware/",
+        "routes/",
+        "services/",
+        "utils/"
+      ]
+    }
+  },
+  "require": {
+    "php": ">=8.2"
+  }
+}
